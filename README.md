@@ -7,49 +7,6 @@ Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, remov
 
 ![Architecture diagram](docs/architecture.png)
 
-```
-                    users.csv
-              (first_name, last_name,
-             department, job_title, email,
-                   phone_number)
-                        |
-                        v
-              locals.users (decoded list)
-                        |
-        +---------------+----------------+
-        |               |                |
-        v               v                v
- aws_iam_user    aws_iam_user_login   local.departments
-  (per user,      _profile              (unique set,
-  keyed by         (console password,    derived from
-  name+lastname)   forced reset on        users.csv)
-        |           first login)               |
-        |                                       v
-        |                              aws_iam_group
-        |                               (one per department,
-        |                                for_each over
-        |                                local.departments)
-        |                                       |
-        +---------------------+-----------------+
-                              |
-                              v
-                  aws_iam_group_membership
-                  (assigns each user to their
-                   department's group)
-                              |
-                              v
-              aws_iam_group_policy_attachment
-              (department -> policy ARN mapping,
-               e.g. Engineering -> PowerUserAccess,
-               others -> ReadOnlyAccess)
-                              |
-                              v
-                    aws_iam_policy "RequireMFA"
-              (attached to every group — denies
-               all actions until the user enrolls
-               their own MFA device)
-```
-
 ## How It Works
 
 1. **`users.csv`** is the single source of truth — one row per employee (name, department, job title, email, phone).
