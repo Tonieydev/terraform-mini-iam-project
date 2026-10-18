@@ -3,6 +3,18 @@
 ## Overview
 Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, removing, or changing a row in `users.csv` and re-running `terraform apply` creates or updates the corresponding IAM user, console login profile, department-based group membership, and attached permissions — no manual IAM console work per employee.
 
+## What This Solves
+
+Onboarding employees through the IAM console one at a time doesn't scale, and it fails in predictable ways:
+
+- **Slow, repetitive setup.** Every new hire means creating a user, setting a password, picking a group, and attaching policies by hand. With 43 employees that is hundreds of console clicks, repeated for every hire after.
+- **Inconsistent permissions.** Two people in the same department end up with different access depending on who set them up and when. Nobody can say with confidence what a given role is supposed to have.
+- **No record of who has what.** Console changes leave no reviewable history. There is no file to diff, no pull request, and no single place to answer "why does this person have this access?"
+- **MFA left optional.** Without enforcement, MFA depends on each user choosing to enable it. Accounts without it are the easiest way into an AWS account.
+- **Long-lived shared passwords.** Admin-set passwords get sent over chat or email and often never change.
+
+This project replaces all of that with one CSV file and one `terraform apply`. Access is defined per department in code, every change is reviewable in Git, MFA is enforced for everyone, and no admin-set password survives a user's first login.
+
 ## Architecture
 
 ![Architecture diagram](docs/architecture.png)
@@ -59,6 +71,29 @@ Terraform will create exactly the new user, their login profile, and their group
 
 **Permissions correctly inherited through group membership — ReadOnlyAccess and RequireMFA both attached via the Corporate group, not set per-user:**
 ![User permissions](docs/screenshots/user-permissions-policies.png)
+
+## Design Decisions
+
+**Why a CSV file as the source of truth, not Terraform variables or a database:**
+HR and team leads already keep staff lists in spreadsheets. A CSV can be edited by someone who doesn't know Terraform, reviewed line by line in a pull request, and exported from almost any HR system. `csvdecode()` reads it natively, so no extra tooling or data store is needed.
+
+**Why departments are derived from the data, not hardcoded:**
+`local.departments` is built from the distinct values in the CSV. When a new department appears, its group is created on the next apply; when the last person leaves one, the group is removed. There is no second list to keep in sync with the CSV, so the two can never drift.
+
+**Why `for_each` keyed on names, not `count`:**
+With `count`, users are tracked by row position. Inserting or deleting a row shifts every index after it, and Terraform would destroy and recreate users who never changed. Keying on a stable name means each user is tracked by identity, so only the row that changed produces a change.
+
+**Why department names are sanitized only at the point of use:**
+`replace(each.value, " ", "-")` is applied only where AWS requires it, in the group name. The original string, such as `"Quality Assurance"`, is kept everywhere else (tags, filtering, membership lookups), so tags stay human-readable and lookups match the CSV exactly.
+
+**Why one membership resource per department, not per user:**
+`aws_iam_group_membership` owns a group's entire member list. One resource per group is the only arrangement where each list has a single owner and applies are predictable (see Issue 3 below).
+
+**Why AWS managed policies as the starting point:**
+`ReadOnlyAccess` and `PowerUserAccess` are maintained by AWS and kept current as services change. They give a working, auditable baseline immediately; custom least-privilege policies per job function are the planned next step, not a day-one requirement.
+
+**Why IAM users here, and Identity Center as a separate project:**
+IAM users and groups show the underlying mechanics directly: users, groups, policies, and MFA enforcement. IAM Identity Center is the right production model, but it replaces the access model rather than extending it, so it belongs in its own repository.
 
 ## Security Design Decisions
 
