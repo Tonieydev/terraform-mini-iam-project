@@ -1,7 +1,7 @@
 # CSV-Driven IAM User Onboarding (Terraform)
 
 ## Overview
-Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, removing, or changing a row in `users.csv` and re-running `terraform apply` creates or updates the corresponding IAM user, console login profile, department-based group membership, and attached permissions, no manual IAM console work per employee.
+Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, removing, or changing a row in `users.csv` and re-running `terraform apply` creates or updates the corresponding IAM user, console login profile, department-based group membership, and attached permissions — no manual IAM console work per employee.
 
 ## What This Solves
 
@@ -69,7 +69,7 @@ Terraform will create exactly the new user, their login profile, and their group
 **User tags populated directly from the CSV row (Department, JobTitle, DisplayName):**
 ![User tags](docs/screenshots/user-tags.png)
 
-**Permissions correctly inherited through group membership — ReadOnlyAccess and RequireMFA both attached via the Corporate group, not set per-user:**
+**Permissions correctly inherited through group membership — ReadOnlyAccess and RequireMFA both attached via the Corporate group, not set per-user. The "Enabled without MFA" flag is expected: this user hasn't signed in yet, and RequireMFA blocks everything except MFA setup until they enroll:**
 ![User permissions](docs/screenshots/user-permissions-policies.png)
 
 ## Design Decisions
