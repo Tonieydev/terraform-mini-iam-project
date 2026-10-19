@@ -1,7 +1,7 @@
 # CSV-Driven IAM User Onboarding (Terraform)
 
 ## Overview
-Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, removing, or changing a row in `users.csv` and re-running `terraform apply` creates or updates the corresponding IAM user, console login profile, department-based group membership, and attached permissions, no manual IAM console work per employee.
+Automated AWS IAM user provisioning driven entirely by a CSV file. Adding, removing, or changing a row in `users.csv` and re-running `terraform apply` creates or updates the corresponding IAM user, console login profile, department-based group membership, and attached permissions — no manual IAM console work per employee.
 
 ## What This Solves
 
@@ -23,7 +23,7 @@ This project replaces all of that with one CSV file and one `terraform apply`. A
 
 1. **`users.csv`** is the single source of truth — one row per employee (name, department, job title, email, phone).
 2. **`locals.users`** decodes the CSV into a list Terraform can loop over.
-3. **`aws_iam_user`** creates one IAM user per row, keyed by `first_name-last_name` (unique key, since names alone can collide across a large employee list). Username is generated from full first name + last name; department and job title are stored as tags for auditability.
+3. **`aws_iam_user`** creates one IAM user per row. Each user is tracked in Terraform under a stable `first_name-last_name` key, so adding or removing a row never shifts other users, and the IAM username is the lowercased `firstname.lastname`. Department and job title are stored as tags for auditability.
 4. **`aws_iam_user_login_profile`** generates a console password for each user with `password_reset_required = true` — nobody uses a Terraform-generated password long-term; everyone sets their own on first login.
 5. **`aws_iam_group`** creates one group per unique department found in the CSV — departments aren't hardcoded, they're derived from the data. Department names containing spaces (e.g. "Quality Assurance") are sanitized to hyphens for AWS naming compliance.
 6. **`aws_iam_group_membership`** assigns each user to the group matching their `Department` tag.
@@ -83,6 +83,9 @@ HR and team leads already keep staff lists in spreadsheets. A CSV can be edited 
 **Why `for_each` keyed on names, not `count`:**
 With `count`, users are tracked by row position. Inserting or deleting a row shifts every index after it, and Terraform would destroy and recreate users who never changed. Keying on a stable name means each user is tracked by identity, so only the row that changed produces a change.
 
+**Why the Terraform key and the IAM username are different:**
+The `for_each` key (`first_name-last_name`) only needs to be unique and stable inside Terraform. The IAM username (`firstname.lastname`, lowercased) is what people actually type at login, so it follows a conventional, readable format. Keeping them separate means the login format can change without disturbing how Terraform tracks each user.
+
 **Why department names are sanitized only at the point of use:**
 `replace(each.value, " ", "-")` is applied only where AWS requires it, in the group name. The original string, such as `"Quality Assurance"`, is kept everywhere else (tags, filtering, membership lookups), so tags stay human-readable and lookups match the CSV exactly.
 
@@ -109,7 +112,7 @@ IAM has no built-in "require MFA" toggle at the account level for IAM users (unl
 ## Issues Hit and Fixed During Build
 
 **1. Username collisions on first-initial scheme**
-Original username scheme (`first-initial + last-name`) collided for two pairs of employees sharing a last name and first initial (`Chiamaka Adewale` / `Chukwuemeka Adewale`, `Aminu Shehu` / `Adebayo Shehu`), causing `EntityAlreadyExists` errors on `apply`. Switched to `firstname.lastname` for guaranteed uniqueness given the dataset.
+Original username scheme (`first-initial + last-name`) collided for two pairs of employees sharing a last name and first initial (`Chiamaka Adewale` / `Chukwuemeka Adewale`, `Aminu Shehu` / `Adebayo Shehu`), causing `EntityAlreadyExists` errors on `apply`. Switched to lowercase `firstname.lastname` for guaranteed uniqueness given the dataset.
 
 **2. Invalid IAM group names**
 AWS IAM resource names reject spaces. Department strings like `"Quality Assurance"` and `"Customer Service"` failed group creation until sanitized with `replace(each.value, " ", "-")` at the point of use, while the original department string is retained everywhere else (tags, filtering, membership lookups).
